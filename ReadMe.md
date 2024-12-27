@@ -34,3 +34,7 @@
 - The `go.mod` file will declare our project dependencies, versions and module path.
   The Makefile will contain recipesfor automating common administrative tasks — like
   auditing our Go code, building binaries, and executing database migrations.
+
+---
+
+Paused at Ch3.5 Advanced JSON customization
