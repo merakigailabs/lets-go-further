@@ -11,6 +11,7 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+	"greenlight.merakigai.com/internal/data"
 )
 
 const version = "1.0.0"
@@ -29,6 +30,7 @@ type config struct {
 type application struct {
 	config config
 	logger *slog.Logger
+	models data.Models
 }
 
 func main() {
@@ -46,11 +48,6 @@ func main() {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	app := &application{
-		config: cfg,
-		logger: logger,
-	}
-
 	// Call the openDB() helper function (see below) to create the connection pool,
 	// passing in the config struct. If this returns an error, we log it and exit the
 	// application immediately.
@@ -62,6 +59,14 @@ func main() {
 	}
 
 	defer db.Close()
+
+	logger.Info("database connection pool established")
+
+	app := &application{
+		config: cfg,
+		logger: logger,
+		models: data.NewModels(db),
+	}
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.port),
