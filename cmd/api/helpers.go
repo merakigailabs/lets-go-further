@@ -6,14 +6,16 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/julienschmidt/httprouter"
+	"greenlight.merakigai.com/internal/validator"
 )
 
-// Retrieve the "id" URL parameter from the current request context, then convert it to
-// an integer and return it. If the operation isn't successful, return 0 and an error.
+type envelope map[string]any
+
 func (app *application) readIDParam(r *http.Request) (int64, error) {
 	params := httprouter.ParamsFromContext(r.Context())
 	id, err := strconv.ParseInt(params.ByName("id"), 10, 64)
@@ -23,11 +25,8 @@ func (app *application) readIDParam(r *http.Request) (int64, error) {
 	return id, nil
 }
 
-// Define an envelope type.
-type envelope map[string]any
-
 func (app *application) writeJSON(w http.ResponseWriter, status int, data envelope, headers http.Header) error {
-	// Encode the data to JSON, returning the error if there was one.
+
 	js, err := json.MarshalIndent(data, "", "\t")
 	if err != nil {
 		return err
@@ -35,13 +34,10 @@ func (app *application) writeJSON(w http.ResponseWriter, status int, data envelo
 
 	js = append(js, '\n')
 
-	//  Could also use : maps.Insert(w.Header(), maps.All(headers))
 	for key, value := range headers {
 		w.Header()[key] = value
 	}
 
-	// Add the "Content-Type: application/json" header, then write the status code and
-	// JSON response.
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	w.Write(js)
@@ -95,4 +91,42 @@ func (app *application) readJSON(w http.ResponseWriter, r *http.Request, dst any
 		return errors.New("body must only contain a single JSON value")
 	}
 	return nil
+}
+
+func (app *application) readString(qs url.Values, key string, defaultValue string) string {
+	s := qs.Get(key)
+
+	if s == "" {
+		return defaultValue
+	}
+
+	return s
+}
+
+func (app *application) readCSV(qs url.Values, key string, defaultValue []string) []string {
+	csv := qs.Get(key)
+
+	if csv == "" {
+		return defaultValue
+	}
+
+	return strings.Split(csv, ",")
+}
+
+func (app *application) readInt(qs url.Values, key string, defaultValue int, v *validator.Validator) int {
+	// Extract the value from the query string.
+	s := qs.Get(key)
+	// If no key exists (or the value is empty) then return the default value.
+	if s == "" {
+		return defaultValue
+	}
+	// Try to convert the value to an int. If this fails, add an error message to the
+	// validator instance and return the default value.
+	i, err := strconv.Atoi(s)
+	if err != nil {
+		v.AddError(key, "must be an integer value")
+		return defaultValue
+	}
+	// Otherwise, return the converted integer value.
+	return i
 }
