@@ -37,7 +37,7 @@
 
 ---
 
-Paused at Ch3.5 Advanced JSON customization
+Paused at Managing and Automating Version Numberss
 
 $ migrate create -seq -ext=.sql -dir=./migrations create_movies_table
 $ migrate -path=./migrations -database=$GREENLIGHT_DB_DSN up
