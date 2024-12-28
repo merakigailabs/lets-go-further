@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"time"
@@ -70,18 +71,13 @@ func ValidatePasswordPlaintext(v *validator.Validator, password string) {
 func ValidateUser(v *validator.Validator, user *User) {
 	v.Check(user.Name != "", "name", "must be provided")
 	v.Check(len(user.Name) <= 500, "name", "must not be more than 500 bytes long")
-	// Call the standalone ValidateEmail() helper.
+
 	ValidateEmail(v, user.Email)
-	// If the plaintext password is not nil, call the standalone
-	// ValidatePasswordPlaintext() helper.
+
 	if user.Password.plaintext != nil {
 		ValidatePasswordPlaintext(v, *user.Password.plaintext)
 	}
-	// If the password hash is ever nil, this will be due to a logic error in our
-	// codebase (probably because we forgot to set a password for the user). It's a
-	// useful sanity check to include here, but it's not a problem with the data
-	// provided by the client. So rather than adding an error to the validation map we
-	// raise a panic instead.
+
 	if user.Password.hash == nil {
 		panic("missing password hash for user")
 	}
@@ -95,10 +91,7 @@ func (m UserModel) Insert(user *User) error {
 	args := []any{user.Name, user.Email, user.Password.hash, user.Activated}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	// If the table already contains a record with this email address, then when we try
-	// to perform the insert there will be a violation of the UNIQUE "users_email_key"
-	// constraint that we set up in the previous chapter. We check for this error
-	// specifically, and return custom ErrDuplicateEmail error instead.
+
 	err := m.DB.QueryRowContext(ctx, query, args...).Scan(&user.ID, &user.CreatedAt, &user.Version)
 	if err != nil {
 		switch {
@@ -176,4 +169,44 @@ func (m UserModel) Update(user *User) error {
 	}
 
 	return nil
+}
+
+func (m UserModel) GetForToken(tokenScope, tokenPlaintext string) (*User, error) {
+	tokenHash := sha256.Sum256([]byte(tokenPlaintext))
+
+	query := `
+		SELECT users.id, users.created_at, users.name, users.email, users.password_hash, users.activated, users.version
+		FROM users
+		INNER JOIN tokens
+		ON users.id = tokens.user_id
+		WHERE tokens.hash = $1
+		AND tokens.scope = $2
+		AND tokens.expiry > $3`
+
+	args := []any{tokenHash[:], tokenScope, time.Now()}
+
+	var user User
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	err := m.DB.QueryRowContext(ctx, query, args...).Scan(
+		&user.ID,
+		&user.CreatedAt,
+		&user.Name,
+		&user.Email,
+		&user.Password.hash,
+		&user.Activated,
+		&user.Version,
+	)
+
+	if err != nil {
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return nil, ErrRecordNotFound
+		default:
+			return nil, err
+		}
+	}
+
+	return &user, nil
 }
